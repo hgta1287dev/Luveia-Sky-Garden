@@ -6,7 +6,7 @@ local KnitBootstrap = {}
 local Logger = LoggerBootstap:GetLogger()
 
 function KnitBootstrap:Init()
-	Logger:Warn(`Knit Starting!`)
+	Logger:Info(`Knit Starting!`)
 	Knit.Start()
 		:andThen(function()
 			Logger:Info(`Knit Started Successfully!`)

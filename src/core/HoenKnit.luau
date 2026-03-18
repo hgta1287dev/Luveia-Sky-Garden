@@ -49,13 +49,13 @@ export type HoenController = HoenObject & KnitController
 local MESSAGES = {
 	Init = {
 		Started = "Init started",
-		Success = "Init successful",
+		Success = "Init completed",
 		Failed = "Init failed",
 	},
 
 	Start = {
 		Started = "Start started",
-		Success = "Start successful",
+		Success = "Start completed",
 		Failed = "Start failed",
 	},
 }
@@ -85,8 +85,14 @@ HoenKnit.Keys = KEYS
 -- * Helpers
 -- Measure time message
 local function measureTime(st)
-	local delta = os.clock() - st
-	return `took {math.floor(delta * 1000)} ms`
+	local delta = (os.clock() - st) * 1000 -- ms
+	local measure
+	if delta < 0.01 then
+		measure = "< 0.01 ms"
+	else
+		measure = string.format("%.2f ms", delta)
+	end
+	return `({measure})`
 end
 
 local function info(action: string, state: string, measure: number?)

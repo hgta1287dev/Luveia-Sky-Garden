@@ -3,7 +3,7 @@ local LoggerManager = require(ReplicatedStorage.Shared.Core.LoggerManager)
 
 local LoggerBootstrap = {}
 LoggerBootstrap.LoggerManager = LoggerManager
-LoggerBootstrap.Logger = LoggerManager:CreateLogger("Boostrap")
+LoggerBootstrap.Logger = LoggerManager:CreateLogger("Bootstrap")
 
 function LoggerBootstrap:Init()
 	LoggerManager:Init()
