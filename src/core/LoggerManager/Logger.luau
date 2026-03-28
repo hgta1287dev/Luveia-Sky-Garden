@@ -104,6 +104,14 @@ function Logger.new(dispatchFn: LogDispatchFn, scope: string?, defaultCategory: 
 	return self
 end
 
+function Logger:SetScope(scope: string)
+	self._scope = scope
+end
+
+function Logger:SetDefaultCategory(category: LogCategory?)
+	self._defaultCategory = category
+end
+
 function Logger:Destroy()
 	self._manager = nil
 	table.clear(self)

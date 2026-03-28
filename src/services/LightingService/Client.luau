@@ -7,6 +7,7 @@ local LightingController = HoenKnit.CreateController({
 	Name = "LightingController",
 })
 local Logger = LightingController._logger
+Logger:SetDefaultCategory("Gameplay")
 
 -- * Pulbic API
 function LightingController:SetPreset(name: string)
@@ -15,7 +16,9 @@ function LightingController:SetPreset(name: string)
 		Logger:Warn(`Preset "{name}" not found!`)
 		return
 	end
+	Logger:Debug(`Applying Lighting Preset name {name}!`)
 	LightingManager:Apply(preset)
+	Logger:Debug(`Applied Lighting Preset name {name}!`)
 end
 
 -- * Knit API

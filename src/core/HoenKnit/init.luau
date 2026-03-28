@@ -138,7 +138,7 @@ local function setupLifecycle(object: KnitObject)
 		end
 
 		-- Notify
-		logger:Info("System", info(ACTIONS.Init, ACTION_STATES.Started))
+		logger:Debug("System", info(ACTIONS.Init, ACTION_STATES.Started))
 
 		-- Init
 		local st = os.clock()
@@ -150,7 +150,7 @@ local function setupLifecycle(object: KnitObject)
 
 		if success then
 			self._state = STATES.Init
-			logger:Info("System", info(ACTIONS.Init, ACTION_STATES.Success, st))
+			logger:Debug("System", info(ACTIONS.Init, ACTION_STATES.Success, st))
 		else
 			logger:Error("System", info(ACTIONS.Init, ACTION_STATES.Failed, st), err)
 		end
@@ -164,7 +164,7 @@ local function setupLifecycle(object: KnitObject)
 		end
 
 		-- Log Start
-		logger:Info("System", info(ACTIONS.Start, ACTION_STATES.Started))
+		logger:Debug("System", info(ACTIONS.Start, ACTION_STATES.Started))
 
 		-- Start
 		local st = os.clock()
@@ -175,7 +175,7 @@ local function setupLifecycle(object: KnitObject)
 
 		if success then
 			self._state = STATES.Start
-			logger:Info("System", info(ACTIONS.Start, ACTION_STATES.Success, st))
+			logger:Debug("System", info(ACTIONS.Start, ACTION_STATES.Success, st))
 		else
 			logger:Error("System", info(ACTIONS.Start, ACTION_STATES.Failed, st), err)
 		end

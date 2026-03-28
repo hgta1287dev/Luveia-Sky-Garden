@@ -1,5 +1,6 @@
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local LogSharedTypes = require(script.LogSharedTypes)
 local Logger = require(script.Logger)
 local Signal = require(ReplicatedStorage.Packages.Signal)
@@ -58,12 +59,19 @@ end
 
 function LoggerManager:_output(message: string, level: LogLevel)
 	local levels = LogSharedTypes.LogLevels
-	if levels[level] >= levels.Error then
-		error(message, 3)
-	elseif level == "Warn" then
-		warn(message)
+
+	if RunService:IsStudio() then
+		if levels[level] >= levels.Error then
+			error(message, 3)
+		elseif level == "Warn" then
+			warn(message)
+		else
+			print(message)
+		end
 	else
-		print(message)
+		if level == "Info" then
+			print(message)
+		end
 	end
 end
 

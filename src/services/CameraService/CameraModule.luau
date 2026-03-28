@@ -762,16 +762,4 @@ function CameraService:SetVerticalRange(angle: number) --> DO INPUT IN DEGREES
 	self.Angle = math.clamp(math.abs(angle), 0, 89)
 end
 
---> Have camera reset focus to new character.
-player.CharacterAdded:Connect(function(char)
-	if
-		not CameraService.Host
-		or (not CameraService.Host:IsDescendantOf(workspace))
-		or (tostring(CameraService.Host.Parent) == player.Name)
-	then
-		currentCharacter = char
-		CameraService:SetCameraHost(char:WaitForChild("HumanoiRootPart"))
-	end
-end)
-
 return CameraService

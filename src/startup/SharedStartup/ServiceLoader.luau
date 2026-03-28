@@ -20,7 +20,7 @@ local SERVICES = {
 	"TestService",
 }
 local CONTROLLERS = {
-	"CameraService", --! Have problems with this one
+	-- "CameraService", --! Have problems with this one
 	"LightingService",
 	"TestService",
 }
@@ -45,7 +45,7 @@ local function LoadService(name)
 		return
 	end
 	ServiceLoader.services[name] = res
-	Logger:Info(`Loaded service: {name}`)
+	Logger:Debug(`Loaded service: {name}`)
 end
 
 local function LoadController(name)
@@ -61,12 +61,15 @@ local function LoadController(name)
 		return
 	end
 	ServiceLoader.controllers[name] = require(client)
-	Logger:Info(`Loaded controller: {name}`)
+	Logger:Debug(`Loaded controller: {name}`)
 end
 
 function ServiceLoader:Init()
-	Logger:Info("System", "Initialization Started!")
+	Logger:Debug("System", "Initialization Started!")
+
 	if RunService:IsServer() then
+		warn("Loader SERVICES")
+
 		for _, name in ipairs(SERVICES) do
 			LoadService(name)
 		end
@@ -84,7 +87,7 @@ function ServiceLoader:Init()
 		end
 	end
 
-	Logger:Info("Initialization Completed!")
+	Logger:Debug("Initialization Completed!")
 end
 
 return ServiceLoader

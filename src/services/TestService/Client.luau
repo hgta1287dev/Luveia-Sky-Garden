@@ -1,16 +1,16 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HoenKnit = require(ReplicatedStorage.Shared.Core.HoenKnit)
-local TestController = HoenKnit.CreateController({ Name = "TestController" })
 
--- * Constants
+local TestController = HoenKnit.CreateController({ Name = "TestController" })
+local Logger = TestController._logger
+Logger:SetDefaultCategory("Gameplay")
 
 -- * Knit
-function TestController:HoenInit()
-	print(self._logger:Format("Init Testinggggggg"))
+function TestController:KnitInit()
+	Logger:Debug("Test Init")
 end
-
-function TestController:HoenStart()
-	print(self._logger:Format("Start Testinggggggg"))
+function TestController:KnitStart()
+	Logger:Debug("Test Start")
 end
 
 return TestController

@@ -3,14 +3,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CameraRemote = require(script.Parent.CameraRemote)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local Knit = require(ReplicatedStorage.Packages.Knit)
-local Logger = require(ReplicatedStorage.Shared.Utils.Logger)
+local HoenKnit = require(ReplicatedStorage.Shared.Core.HoenKnit)
 
-local CameraController = Knit.CreateController({
+local CameraController = HoenKnit.CreateController({
 	Name = "CameraController",
 	_currentTransitionPromise = nil,
 })
-
-local SCOPENAME = "CameraController"
+local Logger = CameraController._logger
+Logger:SetDefaultCategory("Gameplay")
 
 -- * Private
 function CameraController:_cancelCurrent()
@@ -63,6 +63,8 @@ function CameraController:KnitStart()
 
 	self:MoveCameraToCurrentMap()
 	MapController.MapUpdated:Connect(function(mapName: string, transitionId: number)
+		Logger:Info(`Camera updating to map {mapName}`)
+
 		self:_cancelCurrent()
 
 		local promise = self:_playTransition()
@@ -78,7 +80,7 @@ function CameraController:KnitStart()
 			end)
 			:catch(function(err)
 				if err ~= "Cancelled" then
-					Logger.error(SCOPENAME, err)
+					Logger:Error("Error while playing transition: " .. err)
 					MapController.TransitionReady:Fire(transitionId)
 				end
 			end)
