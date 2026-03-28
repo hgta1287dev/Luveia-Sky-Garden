@@ -10,7 +10,6 @@ local SHARED = {
 	"DevLogService",
 	-- "CameraProxyService",
 	"MapService",
-	-- "CameraService", --! Have problems with this one
 	-- "WindService",
 	"TestService",
 	-- "RoomService",
@@ -18,20 +17,12 @@ local SHARED = {
 }
 
 local SERVICES = {
-	"DevLogService",
-	-- "CameraProxyService",
-	"MapService",
-	-- "WindService",
-	-- "TestService",
-	-- "RoomService",
-	-- "CharacterService",
+	"TestService",
 }
-
 local CONTROLLERS = {
-	"MapService",
-	"DevLogService",
+	"CameraService", --! Have problems with this one
 	"LightingService",
-	-- "TestService",
+	"TestService",
 }
 
 -- * Loader
@@ -48,7 +39,12 @@ local function LoadService(name)
 		Logger:Warn(`There is no Service name {name}`)
 		return
 	end
-	ServiceLoader.services[name] = require(server)
+	local success, res = pcall(require, server)
+	if not success then
+		Logger:Error(res)
+		return
+	end
+	ServiceLoader.services[name] = res
 	Logger:Info(`Loaded service: {name}`)
 end
 
@@ -57,6 +53,11 @@ local function LoadController(name)
 	local client = serviceFolder and serviceFolder:FindFirstChild(`{name}Client`)
 	if not client then
 		Logger:Warn(`There is no Controller name {name}`)
+		return
+	end
+	local success, res = pcall(require, client)
+	if not success then
+		Logger:Error(res)
 		return
 	end
 	ServiceLoader.controllers[name] = require(client)
