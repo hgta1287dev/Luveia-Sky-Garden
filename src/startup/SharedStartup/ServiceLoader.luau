@@ -11,7 +11,7 @@ local SHARED = {
 	-- "CameraProxyService",
 	"MapService",
 	-- "WindService",
-	"TestService",
+	-- "TestService",
 	-- "RoomService",
 	-- "CharacterService",
 }
@@ -68,8 +68,6 @@ function ServiceLoader:Init()
 	Logger:Debug("System", "Initialization Started!")
 
 	if RunService:IsServer() then
-		warn("Loader SERVICES")
-
 		for _, name in ipairs(SERVICES) do
 			LoadService(name)
 		end

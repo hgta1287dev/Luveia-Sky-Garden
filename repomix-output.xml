@@ -32,7 +32,7 @@ The content is organized as follows:
 <notes>
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Only files matching these patterns are included: src/core/DevPanel
+- Only files matching these patterns are included: src/services/CameraService/CameraModule
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
@@ -41,449 +41,906 @@ The content is organized as follows:
 </file_summary>
 
 <directory_structure>
-src/core/DevPanel/App.luau
-src/core/DevPanel/DevCommon/DevFilterManager.luau
-src/core/DevPanel/DevCommon/DevPanelState.luau
-src/core/DevPanel/DevConsole/DevConsole.luau
-src/core/DevPanel/DevConsole/DevConsolePanel.luau
-src/core/DevPanel/DevConsole/DevConsoleStates.luau
-src/core/DevPanel/DevController/DevControllerPanel.luau
-src/core/DevPanel/init.luau
+src/services/CameraService/CameraModule/CameraModeFactory.luau
+src/services/CameraService/CameraModule/CameraModeManager.luau
+src/services/CameraService/CameraModule/Config/CameraTypes.luau
+src/services/CameraService/CameraModule/Context/CameraContext.luau
+src/services/CameraService/CameraModule/Context/CameraInputState.luau
+src/services/CameraService/CameraModule/Context/CameraState.luau
+src/services/CameraService/CameraModule/Controllers/CameraDistanceZoomer.luau
+src/services/CameraService/CameraModule/Controllers/CameraFieldOfViewZoomer.luau
+src/services/CameraService/CameraModule/init.luau
+src/services/CameraService/CameraModule/Input/CameraGamepadInput.luau
+src/services/CameraService/CameraModule/Input/CameraInput.luau
+src/services/CameraService/CameraModule/Input/CameraMouseInput.luau
+src/services/CameraService/CameraModule/Input/CameraTouchInput.luau
+src/services/CameraService/CameraModule/Modes/BaseCameraMode.luau
+src/services/CameraService/CameraModule/Modes/BaseOrbitalMode.luau
+src/services/CameraService/CameraModule/Modes/CameraCylindricalOrbital.luau
+src/services/CameraService/CameraModule/Modes/CameraFree.luau
+src/services/CameraService/CameraModule/Modes/CameraOrbital.luau
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
 
-<file path="src/core/DevPanel/App.luau">
+<file path="src/services/CameraService/CameraModule/CameraModeFactory.luau">
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LoggerManager = require(ReplicatedStorage.Shared.Core.LoggerManager)
+local CameraTypes = require(ReplicatedStorage.Shared.Services.CameraService.CameraModule.Config.CameraTypes)
+local CameraContext = require(ReplicatedStorage.Shared.Services.CameraService.CameraModule.Context.CameraContext)
+local BaseCameraMode = require(ReplicatedStorage.Shared.Services.CameraService.CameraModule.Modes.BaseCameraMode)
+local CameraCylindricalOrbital =
+	require(ReplicatedStorage.Shared.Services.CameraService.CameraModule.Modes.CameraCylindricalOrbital)
+local CameraFree = require(ReplicatedStorage.Shared.Services.CameraService.CameraModule.Modes.CameraFree)
+local CameraOrbital = require(ReplicatedStorage.Shared.Services.CameraService.CameraModule.Modes.CameraOrbital)
 
--- local DevConsolePanel = require(script.Parent.DevConsole.DevConsolePanel)
-local Iris = require(ReplicatedStorage.Packages.Iris)
-local DevPanelState = require(ReplicatedStorage.Shared.Core.DevPanel.DevCommon.DevPanelState)
-local DevConsole = require(ReplicatedStorage.Shared.Core.DevPanel.DevConsole.DevConsole)
-local DevConsolePanel = require(ReplicatedStorage.Shared.Core.DevPanel.DevConsole.DevConsolePanel)
-local DevControllerPanel = require(ReplicatedStorage.Shared.Core.DevPanel.DevController.DevControllerPanel)
+local ModeRegistry = {}
+local Logger = LoggerManager:CreateLogger(script.Name, "System")
 
-local DevPanel = {}
+-- * Types
+export type CameraContext = CameraContext.CameraContext
+export type ModeName = CameraTypes.ModeName
+export type Mode = BaseCameraMode.BaseMode
 
-function DevPanel:Init()
-	DevConsole:Init()
+-- * Constant
+local MODES = {
+	CylindricalOrbital = CameraCylindricalOrbital,
+	Orbital = CameraOrbital,
+	Free = CameraFree,
+}
 
-	Iris.Init()
-	Iris:Connect(function()
-		if not DevPanelState.ShowControllerPanel:get() then
-			if Iris.Button({ "Open DevPanel" }):clicked() then
-				local target = not DevPanelState.ShowControllerPanel:get()
-				DevPanelState.ShowControllerPanel:set(target)
-			end
-		end
+-- * Public
+-- register
+function ModeRegistry:Register(name: ModeName, mode: Mode)
+	if not name then
+		Logger:Error("Mode must have a name")
+		return
+	end
 
-		DevControllerPanel:Render()
-		DevConsolePanel:Render()
+	if typeof(mode.Update) ~= "function" then
+		Logger:Error("Mode must have Update function")
+		return
+	end
+
+	self._modes[name] = mode
+end
+
+-- getters
+function ModeRegistry:Get(name: ModeName): Mode?
+	return self._modes[name]
+end
+
+function ModeRegistry:GetAll(): { [ModeName]: Mode }
+	return self._modes
+end
+
+function ModeRegistry:Create(name: ModeName, context: CameraContext): Mode?
+	local mode = self:Get(name)
+
+	if not mode then
+		Logger:Error(`Mode "{name}" not found`)
+		return
+	end
+
+	return mode.new(context)
+end
+
+return ModeRegistry
+</file>
+
+<file path="src/services/CameraService/CameraModule/CameraModeManager.luau">
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LoggerManager = require(ReplicatedStorage.Shared.Core.LoggerManager)
+local CameraTypes = require(ReplicatedStorage.Shared.Services.CameraService.CameraModule.Config.CameraTypes)
+local CameraModeFactory = require(script.Parent.CameraModeFactory)
+
+local CameraModeManager = {}
+CameraModeManager.__index = CameraModeManager
+local Logger = LoggerManager:CreateLogger(script.Name, "System")
+
+-- * Types
+export type CameraContext = CameraTypes.CameraContext
+export type ModeName = CameraTypes.ModeName
+export type Mode = CameraTypes.Mode
+
+export type CameraModeManager = typeof(setmetatable({
+	_currentMode = nil :: Mode?,
+	_modes = {} :: { [ModeName]: Mode },
+}, CameraModeManager))
+
+-- * Constructor
+function CameraModeManager.new()
+	return setmetatable({
+		_currentMode = nil,
+		_modes = {},
+	}, CameraModeManager)
+end
+
+-- * Public
+-- Mode management
+function CameraModeManager:AddMode(name: ModeName, context: CameraContext): Mode?
+	local mode = CameraModeFactory:Create(name, context)
+
+	if not mode then
+		Logger:Error(`Mode "{name}" not found!`)
+		return nil
+	end
+
+	self._modes[name] = mode
+	return mode
+end
+
+function CameraModeManager:RemoveMode(name: ModeName)
+	self._modes[name] = nil
+end
+
+-- Getters
+function CameraModeManager:GetMode(name): Mode?
+	local mode = self._modes[name]
+	return mode
+end
+
+function CameraModeManager:GetModes(): { [string]: Mode }
+	return self._modes
+end
+
+function CameraModeManager:GetCurrentMode()
+	return self._currentMode
+end
+
+-- Change mode
+function CameraModeManager:ChangeMode(name, context)
+	if self._currentMode then
+		self._currentMode:Exit()
+	end
+	self._currentMode = self:GetMode(name, context)
+	if self._currentMode then
+		self._currentMode:Enter(context)
+	end
+end
+
+-- Update
+function CameraModeManager:Update(dt)
+	if self._currentMode then
+		return self._currentMode:Update(dt)
+	end
+	return
+end
+
+-- Helper
+function CameraModeManager:AutoRegisterModes(context: CameraContext)
+	for name, _ in pairs(CameraTypes.Modes) do
+		self:AddMode(name, context)
+	end
+end
+
+return CameraModeManager
+</file>
+
+<file path="src/services/CameraService/CameraModule/Config/CameraTypes.luau">
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CameraContext = require(ReplicatedStorage.Shared.Services.CameraService.CameraModule.Context.CameraContext)
+local BaseCameraMode = require(ReplicatedStorage.Shared.Services.CameraService.CameraModule.Modes.BaseCameraMode)
+
+-- * Types
+export type CameraContext = CameraContext.CameraContext
+export type CameraState = CameraContext.CameraState
+export type CameraInputState = CameraContext.CameraInputState
+export type Mode = BaseCameraMode.BaseMode
+export type ModeName = "CylindricalOrbital" | "Orbital" | "Free"
+
+-- * Constant
+local Modes = {
+	CylindricalOrbital = "CylindricalOrbital",
+	Orbital = "Orbital",
+	Free = "Free",
+}
+
+return {
+	Modes = Modes,
+}
+</file>
+
+<file path="src/services/CameraService/CameraModule/Context/CameraContext.luau">
+local CameraInputState = require(script.Parent.CameraInputState)
+local CameraState = require(script.Parent.CameraState)
+
+local CameraContext = {}
+CameraContext.__index = CameraContext
+
+-- * Types
+export type CameraInputState = CameraInputState.InputState
+export type CameraState = CameraState.CameraState
+export type CameraContextData = {
+	CameraState: CameraState,
+	InputState: CameraInputState,
+}
+
+export type CameraContext = typeof(setmetatable({} :: CameraContextData, CameraContext))
+
+-- * Constructor
+function CameraContext.new(state: CameraState?, inputState: CameraInputState?): CameraContext
+	local self = setmetatable({
+		CameraState = state or CameraState.new(),
+		InputState = inputState or CameraInputState.new(),
+	}, CameraContext)
+
+	return self
+end
+
+-- Get mode state
+function CameraContext:GetModeStates(): CameraState
+	return self.CameraState
+end
+
+function CameraContext:GetModeState(modeName: string): any
+	if not self.CameraState.ModeState then
+		self.CameraState.ModeState = {}
+	end
+
+	local modeState = self.CameraState.ModeState[modeName]
+	if not modeState then
+		modeState = {}
+		self.CameraState.ModeState[modeName] = modeState
+	end
+	return modeState
+end
+
+function CameraContext:GetInputState(): CameraInputState
+	return self.InputState
+end
+
+-- Reset input
+function CameraContext:ResetInput()
+	self.InputState.DeltaYaw = 0
+	self.InputState.DeltaPitch = 0
+	self.InputState.Zoom = 0
+	self.InputState.Move = Vector3.zero
+end
+
+return CameraContext
+</file>
+
+<file path="src/services/CameraService/CameraModule/Context/CameraInputState.luau">
+local InputState = {}
+
+export type InputState = {
+	DeltaYaw: number,
+	DeltaPitch: number,
+	Zoom: number,
+	Move: Vector3,
+}
+
+function InputState.new()
+	local self = setmetatable({
+		DeltaYaw = 0,
+		DeltaPitch = 0,
+		Zoom = 0,
+		Move = Vector3.zero,
+	}, InputState)
+
+	return self
+end
+
+return InputState
+</file>
+
+<file path="src/services/CameraService/CameraModule/Context/CameraState.luau">
+local CameraState = {}
+
+-- * Types
+export type OrbitState = {
+	TargetYaw: number,
+	TargetPitch: number,
+	TargetDistance: number,
+}
+
+export type FreeState = {
+	Speed: number,
+}
+
+export type CameraState = {
+	-- * Objects Reference
+	CameraTarget: BasePart?,
+	LookAtTarget: BasePart?,
+
+	-- * Offsets
+	PivotOffset: Vector3,
+	CameraOffset: Vector3,
+
+	-- * Camera Settings
+	Sensitivity: number,
+	SmoothFactor: number,
+
+	-- * FOV Zoomer
+	ZoomFOV: number,
+	ZoomFOVSpeed: number,
+
+	-- * Distance Zoomer
+	ZoomDistanceMin: number,
+	ZoomDistanceMax: number,
+	ZoomDistanceSpeed: number,
+
+	-- * Camera Modes
+	Orbit: OrbitState,
+	Free: FreeState,
+}
+
+function CameraState.new(): State
+	return {
+		CameraTarget = nil, -- camera target
+		LookAtTarget = nil, -- lookAt target
+
+		PivotOffset = Vector3.zero, -- offset from target
+		CameraOffset = Vector3.zero, -- offset from pivot
+
+		ZoomFOV = 70,
+		ZoomFOVSpeed = 1,
+
+		Sensitivity = 1,
+		SmoothFactor = 1,
+
+		ZoomDistanceMin = 10,
+		ZoomDistanceMax = 50,
+		ZoomDistanceSpeed = 100,
+
+		Orbit = {
+			TargetYaw = 0,
+			TargetPitch = 0,
+			TargetDistance = 5,
+		},
+
+		Free = {
+			Speed = 5,
+		},
+	}
+end
+
+return CameraState
+</file>
+
+<file path="src/services/CameraService/CameraModule/Controllers/CameraDistanceZoomer.luau">
+local DistanceZoomer = {}
+DistanceZoomer.__index = DistanceZoomer
+
+-- * Constructor
+function DistanceZoomer.new(config)
+	return setmetatable({
+		min = config.ZoomMin,
+		max = config.ZoomMax,
+		speed = config.ZoomSpeed,
+		targetDistance = nil,
+	}, DistanceZoomer)
+end
+
+-- * Public
+function DistanceZoomer:Init(distance)
+	self.targetDistance = distance
+end
+
+function DistanceZoomer:Zoom(delta)
+	if not self.targetDistance then
+		return
+	end
+
+	self.targetDistance -= delta * self.speed
+	self.targetDistance = math.clamp(self.targetDistance, self.min, self.max)
+end
+
+function DistanceZoomer:Get()
+	return self.targetDistance
+end
+
+return DistanceZoomer
+</file>
+
+<file path="src/services/CameraService/CameraModule/Controllers/CameraFieldOfViewZoomer.luau">
+
+</file>
+
+<file path="src/services/CameraService/CameraModule/init.luau">
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local CameraModeManager = require(script.CameraModeManager)
+local CameraTypes = require(script.Config.CameraTypes)
+local LoggerManager = require(ReplicatedStorage.Shared.Core.LoggerManager)
+local CameraContext = require(script.Context.CameraContext)
+local CameraInput = require(script.Input.CameraInput)
+local CameraModule = {}
+
+CameraModule.__index = CameraModule
+local Logger = LoggerManager:CreateLogger(script.Name, "System")
+
+-- * Types
+type CameraInput = CameraInput.CameraInput
+
+export type CameraState = CameraTypes.CameraState
+export type CameraContext = CameraTypes.CameraContext
+export type InputState = CameraTypes.CameraInputState
+export type Mode = CameraTypes.Mode
+export type ModeName = CameraTypes.ModeName
+
+export type CameraModuleData = {
+	_started: boolean,
+	_context: CameraContext.CameraContext,
+	_manager: CameraModeManager.CameraModeManager,
+	_input: CameraInput,
+}
+export type CameraModule = typeof(setmetatable({} :: CameraModuleData, CameraModule))
+
+-- * Constant
+local RENDER_NAME = "CameraModuleRender"
+local RENDER_PRIORITY = Enum.RenderPriority.Camera.Value
+local DEFAULT_MODE = CameraTypes.Modes.Orbital
+
+-- * Private
+function CameraModule:_update(dt: number)
+	local cframe, fov = self._manager:Update(dt)
+
+	local camera = workspace.CurrentCamera
+	if not camera then
+		return
+	end
+
+	camera.CFrame = cframe or camera.CFrame
+	camera.FieldOfView = fov or camera.FieldOfView
+end
+
+-- * Constructor
+function CameraModule.new(): CameraModule
+	local context = CameraContext.new()
+	local data: CameraModuleData = {
+		_context = context,
+		_manager = CameraModeManager.new(),
+		_input = CameraInput.new(context.InputState),
+		_started = false,
+	}
+	local self = setmetatable(data, CameraModule)
+	return self
+end
+
+-- * Public
+function CameraModule:Init()
+	self._manager:AutoRegisterModes(self._context)
+
+	self:Start()
+end
+
+function CameraModule:Start()
+	if self._started then
+		return
+	end
+
+	self._started = true
+
+	RunService:BindToRenderStep(RENDER_NAME, RENDER_PRIORITY, function(delta: number)
+		self:_update(delta)
 	end)
 end
 
-return DevPanel
-</file>
+function CameraModule:Stop()
+	if not self._started then
+		return
+	end
+	self._started = false
 
-<file path="src/core/DevPanel/DevCommon/DevFilterManager.luau">
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Iris = require(ReplicatedStorage.Packages.Iris)
-local OrderedCollections =
-	require(ReplicatedStorage.Packages._Index["hgta1287dev_ordered-collections@1.0.0"]["ordered-collections"])
+	RunService:UnbindFromRenderStep(RENDER_NAME)
+end
 
-local Manager = {}
-Manager.__index = Manager
-
--- * Types
-type Map<K, V> = OrderedCollections.Map<K, V>
-type State = typeof(Iris.State(true))
-
-export type StateName = string | "All"
-export type StateManagerDef = {
-	[string]: boolean,
-}
-export type StateManagerData = {
-	_states: Map<string, State>,
-	_masterState: State,
-
-	_updatingMaster: boolean,
-	_updatingNormal: boolean,
-}
-export type StateManager = typeof(setmetatable({} :: StateManagerData, Manager))
-
--- * Constructor
-function Manager.new(def: StateManagerDef?): StateManager
-	-- * Define data
-	local data: StateManagerData = {
-		_states = OrderedCollections.Map.new(),
-		_masterState = Iris.State(true),
-
-		_updatingMaster = false,
-		_updatingNormal = false,
-	}
-
-	-- * Set metatable
-	local self = setmetatable(data, Manager) :: StateManager
-
-	-- * Define states
-	if def ~= nil then
-		for name, defaultValue in pairs(def) do
-			self:AddState(name, defaultValue)
-		end
+-- * Mode Controller
+function CameraModule:ChangeMode(modeName: ModeName)
+	if self._manager:GetCurrentMode() == self._manager:GetMode(modeName) then
+		return
 	end
 
-	-- * Bind
-	self._masterState:onChange(function()
-		self:_onMasterStateChange()
+	if not CameraTypes.Modes[modeName] then
+		Logger:Warn(`Mode "{modeName}" not found! Using default mode: {DEFAULT_MODE}`)
+		self:ChangeMode(DEFAULT_MODE)
+		return
+	end
+
+	self._manager:ChangeMode(modeName, self._context)
+end
+
+-- * Getters
+function CameraModule:GetContext(): CameraContext
+	return self._context
+end
+
+function CameraModule:GetCurrentMode(): Mode?
+	return self._manager:GetCurrentMode()
+end
+
+function CameraModule:GetStates(): CameraState
+	return self._context:GetModeStates()
+end
+
+function CameraModule:GetInputState(): InputState
+	return self._context:GetInputState()
+end
+
+return CameraModule.new()
+</file>
+
+<file path="src/services/CameraService/CameraModule/Input/CameraGamepadInput.luau">
+local UserInputService = game:GetService("UserInputService")
+
+local GamepadInput = {}
+GamepadInput.__index = GamepadInput
+
+export type GamepadInput = typeof(setmetatable(
+	{} :: {
+		RightStick: Vector2,
+		LeftStick: Vector3,
+		Triggers: number,
+	},
+	GamepadInput
+))
+
+function GamepadInput.new()
+	local self = setmetatable({
+		RightStick = Vector2.zero,
+		LeftStick = Vector3.zero,
+		Triggers = 0,
+	}, GamepadInput)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Gamepad1 then
+			if input.KeyCode == Enum.KeyCode.Thumbstick1 then
+				self.LeftStick = Vector3.new(input.Position.X, 0, input.Position.Y)
+			elseif input.KeyCode == Enum.KeyCode.Thumbstick2 then
+				self.RightStick = Vector2.new(input.Position.X, input.Position.Y)
+			elseif input.KeyCode == Enum.KeyCode.ButtonR2 then
+				self.Triggers = input.Position.Z
+			end
+		end
 	end)
 
 	return self
 end
 
--- * Private Methods
--- * Binding
-function Manager:_onMasterStateChange()
-	if self._updatingMaster then
-		return
-	end
-	self._updating = true
-
-	local masterState = self:GetMasterState()
-	self:EachState(function(name: string, state: State)
-		state:set(masterState:get())
-	end)
-
-	self._updating = false
+function GamepadInput:GetDelta()
+	local delta = self.RightStick
+	local move = self.LeftStick
+	local zoom = self.Triggers
+	self.RightStick = Vector2.zero
+	self.LeftStick = Vector3.zero
+	self.Triggers = 0
+	return delta, move, zoom
 end
 
--- * Public
--- Each State
-function Manager:EachState(callback: (name: string, state: State) -> boolean?)
-	(self._states :: Map<string, State>):Each(callback)
-end
-
--- State Getters
-function Manager:GetState(name: StateName): State?
-	if name == "All" then
-		return self:GetMasterState()
-	end
-	return self._states:Get(name)
-end
-
-function Manager:GetMasterState(): State
-	return self._masterState
-end
-
--- State Mangement
-function Manager:AddState(name: StateName, defaultValue: boolean?): State
-	-- * Check if state already exists
-	local state = self:GetState(name)
-	if state then
-		return state
-	end
-
-	-- * Define state
-	state = Iris.State(defaultValue ~= nil and defaultValue or true)
-
-	-- * Add state
-	self._states:Set(name, state)
-
-	return state
-end
-
-return Manager
+return GamepadInput
 </file>
 
-<file path="src/core/DevPanel/DevCommon/DevPanelState.luau">
+<file path="src/services/CameraService/CameraModule/Input/CameraInput.luau">
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Iris = require(ReplicatedStorage.Packages.Iris)
+local RunService = game:GetService("RunService")
+local CameraTypes = require(ReplicatedStorage.Shared.Services.CameraService.CameraModule.Config.CameraTypes)
+local CameraGamepadInput = require(script.Parent.CameraGamepadInput)
+local CameraMouseInput = require(script.Parent.CameraMouseInput)
+local CameraTouchInput = require(script.Parent.CameraTouchInput)
 
-local States = {
-	ShowControllerPanel = Iris.State(true),
-	ShowConsolePanel = Iris.State(false),
+local CameraInput = {}
+CameraInput.__index = CameraInput
+
+export type CameraInputState = CameraTypes.CameraInputState
+export type CameraInputData = {
+	InputState: CameraInputState,
+	Mouse: CameraMouseInput.MouseInput,
+	Gamepad: CameraGamepadInput.GamepadInput,
+	Touch: CameraTouchInput.TouchInput,
 }
+export type CameraInput = typeof(setmetatable({} :: CameraInputData, CameraInput))
 
-return States
-</file>
+function CameraInput.new(inputState: CameraInputState): CameraInput
+	local self = setmetatable({
+		InputState = inputState,
+		Mouse = CameraMouseInput.new(),
+		Gamepad = CameraGamepadInput.new(),
+		Touch = CameraTouchInput.new(),
+	}, CameraInput)
 
-<file path="src/core/DevPanel/DevConsole/DevConsole.luau">
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local LogSharedTypes = require(ReplicatedStorage.Shared.Core.LoggerManager.LogSharedTypes)
-
-local IrisTypes = require(ReplicatedStorage.Packages._Index["sirmallard_iris@2.5.0"].iris.Types)
-local OrderedCollections =
-	require(ReplicatedStorage.Packages._Index["hgta1287dev_ordered-collections@1.0.0"]["ordered-collections"])
-local DevFilterManager = require(ReplicatedStorage.Shared.Core.DevPanel.DevCommon.DevFilterManager)
-local LoggerManager = require(ReplicatedStorage.Shared.Core.LoggerManager)
-
--- * Types
-type Set<T> = OrderedCollections.Set<T>
-type State<T> = IrisTypes.State<T>
-
-type LogEntry = LogSharedTypes.LogEntry
-type LogLevel = LogSharedTypes.LogLevel
-type FilterManager = DevFilterManager.StateManager
-
--- * Constants
-local MAX_LOGS = 300
-
--- * Constructor
-local DevConsole = {
-	levelFilterManager = DevFilterManager.new() :: FilterManager,
-	categoryFilterManager = DevFilterManager.new() :: FilterManager,
-	entries = OrderedCollections.Set.new() :: OrderedCollections.Set<LogEntry>,
-}
-
--- * Private
--- Binding
-function DevConsole:_onMessageOut(entry: LogEntry)
-	self:Log(entry)
+	self:Start()
+	return self
 end
 
--- Update
-function DevConsole:_addToEntries(entry: LogEntry)
-	self.entries:PushFront(entry)
-	if self.entries:Size() > MAX_LOGS then
-		self.entries:PopBack()
-	end
-end
-
--- * Public
--- Pass through
-function DevConsole:Filter(entry: LogEntry): boolean
-	local levelState = self.levelFilterManager:GetState(entry.level)
-	if not levelState or not levelState:get() then
-		return false
-	end
-
-	local categoryState = self.categoryFilterManager:GetState(entry.category)
-	if not categoryState or not categoryState:get() then
-		return false
-	end
-
-	return true
-end
-
--- Log Methods
-function DevConsole:Log(entry: LogEntry)
-	self:_addToEntries(entry)
-end
-
-function DevConsole:Clear()
-	self.entries:Clear()
-end
-
--- Getters
-function DevConsole:GetEntriesSet(): Set<LogEntry>
-	return self.entries
-end
-
-function DevConsole:EachEntry(callback: (entry: LogEntry) -> boolean?)
-	self.entries:Each(callback)
-end
-
--- Lifecycle
-function DevConsole:Init()
-	-- Bind MessageOut
-	LoggerManager:ConnectMessageOut(function(message: string, entryBuffer: buffer)
-		self:_onMessageOut(LoggerManager:DeserializeEntry(entryBuffer))
+function CameraInput:Start()
+	RunService:BindToRenderStep("CameraInputUpdate", Enum.RenderPriority.Input.Value, function(dt)
+		self:Update(dt)
 	end)
 end
 
-return DevConsole
+function CameraInput:Stop()
+	RunService:UnbindFromRenderStep("CameraInputUpdate")
+end
+
+function CameraInput:Update(dt)
+	local input = self.InputState :: CameraInputState
+	-- reset first
+	input.DeltaYaw = 0
+	input.DeltaPitch = 0
+	input.Zoom = 0
+	input.Move = Vector3.zero
+
+	-- merge from all devices
+	local mouseDelta, mouseZoom = self.Mouse:GetDelta()
+	local gamepadDelta, gamepadMove, gamepadZoom = self.Gamepad:GetDelta()
+	local touchDelta, touchZoom = self.Touch:GetDelta()
+
+	input.DeltaYaw = mouseDelta.X + gamepadDelta.X + touchDelta.X
+	input.DeltaPitch = mouseDelta.Y + gamepadDelta.Y + touchDelta.Y
+	input.Zoom = mouseZoom + gamepadZoom + touchZoom
+	input.Move = gamepadMove
+end
+
+function CameraInput:GetInputState(): CameraInputState
+	return self.InputState
+end
+
+return CameraInput
 </file>
 
-<file path="src/core/DevPanel/DevConsole/DevConsolePanel.luau">
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local DevConsole = require(script.Parent.DevConsole)
-local DevConsoleStates = require(script.Parent.DevConsoleStates)
-local Iris = require(ReplicatedStorage.Packages._Index["sirmallard_iris@2.5.0"].iris)
-local IrisTypes = require(ReplicatedStorage.Packages._Index["sirmallard_iris@2.5.0"].iris.Types)
-local DevPanelState = require(ReplicatedStorage.Shared.Core.DevPanel.DevCommon.DevPanelState)
-local LogSharedTypes = require(ReplicatedStorage.Shared.Core.LoggerManager.LogSharedTypes)
+<file path="src/services/CameraService/CameraModule/Input/CameraMouseInput.luau">
+local UserInputService = game:GetService("UserInputService")
 
-local OutputConsole = {}
-OutputConsole.__index = OutputConsole
+local MouseInput = {}
+MouseInput.__index = MouseInput
+
+export type MouseInput = typeof(setmetatable(
+	{} :: {
+		Delta: Vector2,
+		Wheel: number,
+	},
+	MouseInput
+))
+
+function MouseInput.new(): MouseInput
+	local self = setmetatable({
+		Delta = Vector2.zero,
+		Wheel = 0,
+	}, MouseInput)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement then
+			self.Delta = Vector2.new(input.Delta.X, input.Delta.Y)
+		elseif input.UserInputType == Enum.UserInputType.MouseWheel then
+			self.Wheel = input.Position.Z
+		end
+	end)
+
+	return self
+end
+
+function MouseInput:GetDelta()
+	local delta = self.Delta
+	local wheel = self.Wheel
+	self.Delta = Vector2.zero
+	self.Wheel = 0
+	return delta, wheel
+end
+
+return MouseInput
+</file>
+
+<file path="src/services/CameraService/CameraModule/Input/CameraTouchInput.luau">
+local UserInputService = game:GetService("UserInputService")
+
+local TouchInput = {}
+TouchInput.__index = TouchInput
+
+export type TouchInput = typeof(setmetatable(
+	{} :: {
+		Delta: Vector2,
+		Zoom: number,
+	},
+	TouchInput
+))
+
+function TouchInput.new(): TouchInput
+	local self = setmetatable({
+		Delta = Vector2.zero,
+		Zoom = 0,
+	}, TouchInput)
+
+	local lastPos = nil
+	-- local lastDistance = nil
+
+	UserInputService.TouchMoved:Connect(function(touch)
+		if lastPos then
+			local delta = touch.Position - lastPos
+			self.Delta = Vector2.new(delta.X, delta.Y)
+		end
+		lastPos = touch.Position
+	end)
+
+	-- pinch zoom
+	UserInputService.TouchPinch:Connect(function(pinches)
+		self.Zoom = pinches.Position.Z
+	end)
+
+	return self
+end
+
+function TouchInput:GetDelta()
+	local delta = self.Delta
+	local zoom = self.Zoom
+	self.Delta = Vector2.zero
+	self.Zoom = 0
+	return delta, zoom
+end
+
+return TouchInput
+</file>
+
+<file path="src/services/CameraService/CameraModule/Modes/BaseCameraMode.luau">
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CameraContext = require(ReplicatedStorage.Shared.Services.CameraService.CameraModule.Context.CameraContext)
+local BaseMode = {}
+BaseMode.__index = BaseMode
 
 -- * Types
-type State<T> = IrisTypes.State<T>
-
-export type LogLevel = LogSharedTypes.LogLevel
-export type LogEntry = LogSharedTypes.LogEntry
-
--- * Default Config
-local COLORS: { [LogLevel]: Color3 } = {
-	Trace = Color3.fromRGB(75, 20, 255),
-	Debug = Color3.fromRGB(100, 180, 255),
-	Info = Color3.fromRGB(255, 255, 255),
-	Warn = Color3.fromRGB(255, 160, 0),
-	Error = Color3.fromRGB(255, 50, 50),
-	Fatal = Color3.fromRGB(200, 0, 0),
+type CameraContext = CameraContext.CameraContext
+export type BaseMode = {
+	context: CameraContext?,
+	Enter: (self: BaseMode, context: CameraContext) -> (),
+	Exit: (self: BaseMode) -> (),
+	Update: (self: BaseMode, dt: number) -> (CFrame?, number?), -- CFrame, FOV
 }
 
--- * API
--- Render
-function OutputConsole:Render()
-	Iris.Window({ "Console Panel" }, { isOpened = DevPanelState.ShowConsolePanel })
-	do
-		Iris.SeparatorText({ "Options" })
-		Iris.SameLine()
-		do
-			-- * Clear button
-			if Iris.Button({ "Clear" }).clicked() then
-				DevConsole:Clear()
-			end
-			-- * Search
-		end
-		Iris.End()
-
-		-- * Options Field
-		Iris.CollapsingHeader({ "Display Settings" })
-		do
-			Iris.Table({ 4 })
-			do
-				Iris.Checkbox({ "Show Date" }, { isChecked = DevConsoleStates.ShowDate })
-				Iris.NextColumn()
-				Iris.Checkbox({ "Show Run Side" }, { isChecked = DevConsoleStates.ShowRunSide })
-				Iris.NextColumn()
-				Iris.Checkbox({ "Show Run Scope" }, { isChecked = DevConsoleStates.ShowRunScope })
-				Iris.NextColumn()
-				Iris.Checkbox({ "Show Run Content" }, { isChecked = DevConsoleStates.ShowRunContent })
-			end
-			Iris.End()
-		end
-		Iris.End()
-
-		-- * Categories Filter Field
-		Iris.CollapsingHeader({ "Category filters" })
-		do
-			Iris.Table({ 4 })
-			do
-				-- * Filters "All"
-				Iris.Checkbox({ "All" }, { isChecked = DevConsole.categoryFilterManager:GetMasterState() })
-
-				-- * Other filters
-				local cnt = 0
-				DevConsole.categoryFilterManager:EachState(function(name: string, state: State<boolean>)
-					cnt += 1
-					if cnt % 2 == 0 then
-						Iris.NextColumn()
-					end
-					Iris.Checkbox({ name }, { isChecked = state })
-				end)
-			end
-			Iris.End()
-		end
-		Iris.End()
-
-		-- * Level Filters Field
-		Iris.CollapsingHeader({ "Level filters" })
-		do
-			Iris.Table({ 4 })
-			do
-				-- * Filters "All"
-				Iris.Checkbox({ "All" }, { isChecked = DevConsole.levelFilterManager:GetMasterState() })
-
-				-- * Other filters
-				local cnt = 0
-				DevConsole.levelFilterManager:EachState(function(name: string, state: State<boolean>)
-					cnt += 1
-					if cnt % 2 == 0 then
-						Iris.NextColumn()
-					end
-					Iris.Checkbox({ name }, { isChecked = state })
-				end)
-			end
-			Iris.End()
-		end
-		Iris.End()
-
-		-- * Output Field
-		Iris.SeparatorText({ "Output" })
-		Iris.Indent()
-		do
-			DevConsole:EachEntry(function(entry: LogEntry)
-				Iris.SameLine(5, nil, Enum.HorizontalAlignment.Left)
-				do
-					if DevConsoleStates.ShowDate:get() then
-						Iris.Text({ entry._timestamp:format("0000.2f") })
-						Iris.Separator()
-					end
-
-					if DevConsoleStates.ShowRunSide:get() then
-						Iris.Text({ string.upper(entry._side) })
-						Iris.Separator()
-					end
-
-					if DevConsoleStates.ShowRunScope:get() then
-						Iris.Text({ entry.scope })
-						Iris.Separator()
-					end
-
-					if DevConsoleStates.ShowRunContent:get() then
-						Iris.TextColored({ entry.content, COLORS[entry.level] })
-					end
-				end
-				Iris.End()
-			end)
-		end
-		Iris.End()
-	end
-	Iris.End()
+function BaseMode.new(): BaseMode
+	local self = setmetatable({
+		context = nil,
+	}, BaseMode)
+	return self
 end
 
-return OutputConsole
+function BaseMode:Enter(context: CameraContext)
+	self.context = context
+end
+
+-- Called every frame
+function BaseMode:Update(dt)
+	return
+end
+
+-- Called when mode exit to another mode
+function BaseMode:Exit(context: CameraContext)
+	self.context = nil
+end
+
+function BaseMode:Destroy()
+	table.clear(self)
+	setmetatable(self, nil)
+end
+
+return BaseMode
 </file>
 
-<file path="src/core/DevPanel/DevConsole/DevConsoleStates.luau">
+<file path="src/services/CameraService/CameraModule/Modes/BaseOrbitalMode.luau">
+local BaseCameraMode = require(script.Parent.BaseCameraMode)
+
+local BaseOrbitalMode = setmetatable({}, BaseCameraMode)
+BaseOrbitalMode.__index = BaseOrbitalMode
+
+function BaseOrbitalMode.new()
+	local self = setmetatable(BaseCameraMode.new(), BaseOrbitalMode)
+	return self
+end
+
+function BaseOrbitalMode:Enter(context)
+	BaseCameraMode.Enter(self, context)
+	local states = context:GetModeStates()
+	self._currentYaw = states.Orbit.TargetYaw
+	self._currentPitch = states.Orbit.TargetPitch
+	self._currentDistance = states.Orbit.TargetDistance
+end
+
+function BaseOrbitalMode:Update(dt)
+	local context = self.context
+	local states = context:GetModeStates()
+	local smooth = states.SmoothFactor
+	local speed = states.Sensitivity
+	local alpha = dt * speed * smooth
+
+	self._currentYaw = math.lerp(self._currentYaw, states.Orbit.TargetYaw, alpha)
+	self._currentPitch = math.lerp(self._currentPitch, states.Orbit.TargetPitch, alpha)
+	self._currentDistance = math.lerp(self._currentDistance, states.Orbit.TargetDistance, alpha)
+
+	local origin = ((states.LookAtTarget and states.LookAtTarget.Position) or Vector3.zero) + states.PivotOffset
+	local orbitOffset = CFrame.Angles(0, math.rad(self._currentYaw), 0)
+		* CFrame.Angles(math.rad(self._currentPitch), 0, 0)
+		* Vector3.new(0, 0, self._currentDistance)
+	local target = origin + orbitOffset
+
+	return CFrame.lookAt(target, origin) * CFrame.new(states.CameraOffset)
+end
+
+return BaseOrbitalMode
+</file>
+
+<file path="src/services/CameraService/CameraModule/Modes/CameraCylindricalOrbital.luau">
+
+</file>
+
+<file path="src/services/CameraService/CameraModule/Modes/CameraFree.luau">
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Iris = require(ReplicatedStorage.Packages.Iris)
+local CameraTypes = require(ReplicatedStorage.Shared.Services.CameraService.CameraModule.Config.CameraTypes)
+local CameraContext = require(ReplicatedStorage.Shared.Services.CameraService.CameraModule.Context.CameraContext)
+local CameraState = require(ReplicatedStorage.Shared.Services.CameraService.CameraModule.Context.CameraState)
+local BaseCameraMode = require(script.Parent.BaseCameraMode)
 
-return {
-	ShowDate = Iris.State(true),
-	ShowRunSide = Iris.State(true),
-	ShowRunScope = Iris.State(true),
-	ShowRunContent = Iris.State(true),
-}
+local CameraOrbital = setmetatable({}, BaseCameraMode)
+CameraOrbital.__index = CameraOrbital
+
+-- * Types
+type CameraContext = CameraContext.CameraContext
+type CameraState = CameraState.CameraState
+
+-- * Lifecycle
+function CameraOrbital.new()
+	local self = setmetatable(BaseCameraMode.new(), CameraOrbital)
+	return self
+end
+
+function CameraOrbital:Enter(context: CameraContext)
+	BaseCameraMode.Enter(self, context)
+	local states = context:GetModeStates()
+end
+
+function CameraOrbital:Update(dt: number)
+	local context = self.context :: CameraContext
+end
+
+return CameraOrbital
 </file>
 
-<file path="src/core/DevPanel/DevController/DevControllerPanel.luau">
+<file path="src/services/CameraService/CameraModule/Modes/CameraOrbital.luau">
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Iris = require(ReplicatedStorage.Packages.Iris)
-local DevPanelState = require(ReplicatedStorage.Shared.Core.DevPanel.DevCommon.DevPanelState)
+local CameraContext = require(ReplicatedStorage.Shared.Services.CameraService.CameraModule.Context.CameraContext)
+local BaseCameraMode = require(script.Parent.BaseCameraMode)
 
-local ControlPanel = {}
+local CameraOrbital = setmetatable({}, BaseCameraMode)
+CameraOrbital.__index = CameraOrbital
 
-function ControlPanel:Render()
-	Iris.Window({ "Controller Panel" }, { isOpened = DevPanelState.ShowControllerPanel })
-	do
-		Iris.MenuBar()
-		do
-			Iris.Menu({ "Tools" })
-			do
-				Iris.MenuToggle({ "Console Panel" }, { isChecked = DevPanelState.ShowConsolePanel })
-			end
-			Iris.End()
-		end
-		Iris.End()
-	end
-	Iris.End()
+-- * Lifecycle
+function CameraOrbital.new()
+	local self = setmetatable(BaseCameraMode.new(), CameraOrbital)
+	return self
 end
 
-return ControlPanel
-</file>
-
-<file path="src/core/DevPanel/init.luau">
-local App = require(script.App)
-
-local DevPanel = {}
-
-function DevPanel:Init()
-	App:Init()
+function CameraOrbital:Enter(context: CameraContext.CameraContext)
+	BaseCameraMode.Enter(self, context)
+	local states = context:GetModeStates()
+	self._currentYaw = states.Orbit.TargetYaw
+	self._currentPitch = states.Orbit.TargetPitch
+	self._currentDistance = states.Orbit.TargetDistance
 end
 
-return DevPanel
+function CameraOrbital:Update(dt: number)
+	local context = self.context :: CameraContext.CameraContext
+	local states = context:GetModeStates()
+
+	local lat = states.LookAtTarget
+
+	local smooth = states.SmoothFactor
+	local speed = states.Sensitivity
+	local alpha = dt * speed * smooth
+
+	self._currentYaw = math.lerp(self._currentYaw, states.Orbit.TargetYaw, alpha)
+	self._currentPitch = math.lerp(self._currentPitch, states.Orbit.TargetPitch, alpha)
+	self._currentDistance = math.lerp(self._currentDistance, states.Orbit.TargetDistance, alpha)
+
+	local origin = ((lat and lat.Position) or Vector3.zero) + states.PivotOffset
+	local orbitOffset = CFrame.Angles(0, math.rad(self._currentYaw), 0)
+		* CFrame.Angles(math.rad(self._currentPitch), 0, 0)
+		* Vector3.new(0, 0, self._currentDistance)
+	local target = origin + orbitOffset
+
+	return CFrame.lookAt(target, origin) * CFrame.new(states.CameraOffset)
+end
+
+return CameraOrbital
 </file>
 
 </files>

@@ -100,10 +100,40 @@
           "CameraService": {
             "$className": "Folder",
             "CameraModule": {
-              "$path": "src/services/CameraService/CameraModule.luau"
-            },
-            "CameraRemote": {
-              "$path": "src/services/CameraService/CameraRemote.luau"
+              "$path": "src/services/CameraService/CameraModule",
+              "Input": {
+                "$className": "Folder",
+                "CameraGamepadInput": {
+                  "$path": "src/services/CameraService/CameraModule/Input/CameraGamepadInput.luau"
+                },
+                "CameraInput": {
+                  "$path": "src/services/CameraService/CameraModule/Input/CameraInput.luau"
+                },
+                "CameraMouseInput": {
+                  "$path": "src/services/CameraService/CameraModule/Input/CameraMouseInput.luau"
+                },
+                "CameraTouchInput": {
+                  "$path": "src/services/CameraService/CameraModule/Input/CameraTouchInput.luau"
+                }
+              },
+              "Modes": {
+                "$className": "Folder",
+                "BaseCameraMode": {
+                  "$path": "src/services/CameraService/CameraModule/Modes/BaseCameraMode.luau"
+                },
+                "BaseOrbitalMode": {
+                  "$path": "src/services/CameraService/CameraModule/Modes/BaseOrbitalMode.luau"
+                },
+                "CameraCylindricalOrbital": {
+                  "$path": "src/services/CameraService/CameraModule/Modes/CameraCylindricalOrbital.luau"
+                },
+                "CameraFree": {
+                  "$path": "src/services/CameraService/CameraModule/Modes/CameraFree.luau"
+                },
+                "CameraOrbital": {
+                  "$path": "src/services/CameraService/CameraModule/Modes/CameraOrbital.luau"
+                }
+              }
             },
             "CameraServiceClient": {
               "$path": "src/services/CameraService/Client.luau"
@@ -183,8 +213,14 @@
             "TestServiceClient": {
               "$path": "src/services/TestService/Client.luau"
             },
-            "TestMap": {
-              "$path": "src/services/TestService/TestMap.luau"
+            "Tests": {
+              "$className": "Folder",
+              "TestCamera": {
+                "$path": "src/services/TestService/Tests/TestCamera.luau"
+              },
+              "TestMap": {
+                "$path": "src/services/TestService/Tests/TestMap.luau"
+              }
             }
           },
           "WindService": {
