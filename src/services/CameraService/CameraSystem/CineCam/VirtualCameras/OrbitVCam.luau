@@ -55,9 +55,6 @@ function OrbitVCam.new()
 end
 
 function OrbitVCam:Update(context: CameraContext, output)
-	local input = context.InputState
-	print(input.MouseState.ScrollDelta)
-
 	-- input
 	self:_updateOrbitInput(context)
 
