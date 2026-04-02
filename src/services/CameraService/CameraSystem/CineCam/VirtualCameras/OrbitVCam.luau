@@ -12,11 +12,18 @@ local CameraOffsetModule =
 local CameraOrbitModule = require(script.Parent.Parent.Pipe.Modules.Body.CameraOrbitModule)
 local BaseVirtualCamera = require(script.Parent.Parent.VirtualCameras.BaseVCam)
 
-type CameraContext = CameraContext.CameraContext
-
+-- * Orbit
 local OrbitVCam = {}
 OrbitVCam.__index = OrbitVCam
 
+-- * Types
+type CameraContext = CameraContext.CameraContext
+
+-- * Consants
+local KEYBOARD_YAW_SPEED = 10
+local KEYBOARD_PITCH_SPEED = 5
+
+-- * Helpers
 local function GetTestPart()
 	local part = Instance.new("Part")
 	part.Anchored = true
@@ -25,6 +32,7 @@ local function GetTestPart()
 	return part
 end
 
+-- * Constructor
 function OrbitVCam.new()
 	local orbitModule = CameraOrbitModule.new()
 	local lookAtModule = CameraLookAtModule.new()
@@ -48,17 +56,40 @@ function OrbitVCam.new()
 	function self:_updateOrbitInput(context: CameraContext)
 		local input = context.InputState
 		local mouseState = input.MouseState
+		local keyboardState = input.KeyboardState
+
+		local yawDelta, pitchDelta = 0, 0
 
 		orbitModule.Distance:AdjustTarget(mouseState.ScrollDelta)
 		if mouseState.ButtonsDown:Has(Enum.UserInputType.MouseButton2) then
-			orbitModule.Yaw:AdjustTarget(mouseState.MoveDelta.X)
-			orbitModule.Pitch:AdjustTarget(mouseState.MoveDelta.Y)
+			yawDelta += mouseState.MoveDelta.X
+			pitchDelta += mouseState.MoveDelta.Y
 		end
+
+		if keyboardState.KeysDown:Has(Enum.KeyCode.A) then
+			yawDelta -= KEYBOARD_YAW_SPEED
+		end
+
+		if keyboardState.KeysDown:Has(Enum.KeyCode.D) then
+			yawDelta += KEYBOARD_YAW_SPEED
+		end
+
+		if keyboardState.KeysDown:Has(Enum.KeyCode.W) then
+			pitchDelta -= KEYBOARD_PITCH_SPEED
+		end
+
+		if keyboardState.KeysDown:Has(Enum.KeyCode.S) then
+			pitchDelta += KEYBOARD_PITCH_SPEED
+		end
+
+		orbitModule.Yaw:AdjustTarget(yawDelta)
+		orbitModule.Pitch:AdjustTarget(pitchDelta)
 	end
 
 	return self
 end
 
+-- * Methods
 function OrbitVCam:Update(context: CameraContext, output)
 	-- input
 	self:_updateOrbitInput(context)
