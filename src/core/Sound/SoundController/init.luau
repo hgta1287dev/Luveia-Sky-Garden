@@ -49,7 +49,7 @@ end
 
 function SoundController:SetChannelVolume(channelName: ChannelName, volume: number, info: TweenInfoOption?)
 	local channel = self.channels[channelName]
-	channel:SetChannelVolume(volume, info)
+	channel.volume = volume
 	channel:SetOutputVolume(channel.volume * self.masterVolume, info)
 end
 

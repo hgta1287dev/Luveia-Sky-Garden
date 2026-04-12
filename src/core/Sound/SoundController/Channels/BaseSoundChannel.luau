@@ -1,45 +1,57 @@
+local ContentProvider = game:GetService("ContentProvider")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 
 local TweenUtils = require(ReplicatedStorage.Shared.Utils.TweenUtils)
 
-local SoundChannel = {}
-SoundChannel.__index = SoundChannel
+local BaseChannel = {}
+BaseChannel.__index = BaseChannel
 
 type TweenInfoOption = TweenUtils.TweenInfoOption
 
-export type SoundChannel = typeof(setmetatable(
+export type BaseChannel = typeof(setmetatable(
 	{} :: {
 		group: SoundGroup,
 		sounds: { [string]: Sound },
 		volume: number,
 	},
-	SoundChannel
+	BaseChannel
 ))
 
-function SoundChannel.new(): SoundChannel
+function BaseChannel.new(): BaseChannel
 	local self = setmetatable({
 		group = Instance.new("SoundGroup"),
 		sounds = {},
 		volume = 1,
-	}, SoundChannel) :: SoundChannel
+	}, BaseChannel) :: BaseChannel
 
 	self:Init()
 	return self
 end
 
-function SoundChannel:Init()
-	self.group.Name = "SoundChannelGroup"
+function BaseChannel:Init()
+	self.group.Name = "BaseChannelGroup"
 	self.group.Parent = SoundService
 	self.group.Volume = 1
 end
 
-function SoundChannel:FindSound(name: string): Sound?
+function BaseChannel:GetBaseVolume(name: string): number
+	local sound = self:RequireSound(name)
+	local att = sound:GetAttribute("BaseVolume")
+	if typeof(att) == "number" then
+		return att
+	else
+		sound:SetAttribute("BaseVolume", sound.Volume)
+		return sound.Volume
+	end
+end
+
+function BaseChannel:FindSound(name: string): Sound?
 	return self.sounds[name]
 end
 
-function SoundChannel:GetSound(name: string): Sound?
+function BaseChannel:GetSound(name: string): Sound?
 	local sound = self:FindSound(name)
 	if not sound then
 		warn(`Sound {name} not found in channel`)
@@ -47,7 +59,7 @@ function SoundChannel:GetSound(name: string): Sound?
 	return sound
 end
 
-function SoundChannel:RequireSound(name: string): Sound
+function BaseChannel:RequireSound(name: string): Sound
 	local sound = self:FindSound(name)
 	if not sound then
 		error(`Sound {name} not found in channel`)
@@ -55,7 +67,7 @@ function SoundChannel:RequireSound(name: string): Sound
 	return sound
 end
 
-function SoundChannel:AddSound(name: string, sound: Sound)
+function BaseChannel:AddSound(name: string, sound: Sound)
 	if self.sounds[name] then
 		warn(`Sound {name} already exists in channel, overwriting`)
 	end
@@ -64,15 +76,17 @@ function SoundChannel:AddSound(name: string, sound: Sound)
 	sound.Parent = self.group
 	sound.SoundGroup = self.group
 	sound:SetAttribute("BaseVolume", sound.Volume)
+
+	ContentProvider:PreloadAsync({ sound })
 end
 
-function SoundChannel:AddSounds(sounds: { [string]: Sound })
+function BaseChannel:AddSounds(sounds: { [string]: Sound })
 	for name, sound in pairs(sounds) do
 		self:AddSound(name, sound)
 	end
 end
 
-function SoundChannel:AddSoundFromContainer(parent: Instance, defineFilter: ((Sound) -> string?)?)
+function BaseChannel:AddSoundFromContainer(parent: Instance, defineFilter: ((Sound) -> string?)?)
 	for _, instance in ipairs(parent:GetDescendants()) do
 		if instance:IsA("Sound") then
 			local sound = instance :: Sound
@@ -88,7 +102,7 @@ function SoundChannel:AddSoundFromContainer(parent: Instance, defineFilter: ((So
 	end
 end
 
-function SoundChannel:SetSoundVolume(name: string, volume: number, info: TweenInfoOption?): Tween
+function BaseChannel:SetSoundVolume(name: string, volume: number, info: TweenInfoOption?): Tween
 	local sound = self:RequireSound(name)
 	local tweenInfo = TweenUtils.createInfo(info)
 	local tween = TweenService:Create(sound, tweenInfo, { Volume = volume })
@@ -96,7 +110,7 @@ function SoundChannel:SetSoundVolume(name: string, volume: number, info: TweenIn
 	return tween
 end
 
-function SoundChannel:SetChannelVolume(volume: number, info: TweenInfoOption?): Tween
+function BaseChannel:SetChannelVolume(volume: number, info: TweenInfoOption?): Tween
 	self.volume = volume
 	local tweenInfo = TweenUtils.createInfo(info)
 	local tween = TweenService:Create(self.group, tweenInfo, { Volume = volume })
@@ -104,38 +118,38 @@ function SoundChannel:SetChannelVolume(volume: number, info: TweenInfoOption?): 
 	return tween
 end
 
-function SoundChannel:SetOutputVolume(volume: number, info: TweenInfoOption?): Tween
+function BaseChannel:SetOutputVolume(volume: number, info: TweenInfoOption?): Tween
 	local tweenInfo = TweenUtils.createInfo(info)
 	local tween = TweenService:Create(self.group, tweenInfo, { Volume = volume })
 	tween:Play()
 	return tween
 end
 
-function SoundChannel:Play(name: string): Sound
+function BaseChannel:Play(name: string): Sound
 	local sound = self:RequireSound(name)
 	sound:Play()
 	return sound
 end
 
-function SoundChannel:Stop(name: string)
+function BaseChannel:Stop(name: string)
 	local sound = self:RequireSound(name)
 	sound:Stop()
 end
 
-function SoundChannel:StopAll()
+function BaseChannel:StopAll()
 	for _, sound in pairs(self.sounds) do
 		sound:Stop()
 	end
 end
 
-function SoundChannel:Pause(name: string)
+function BaseChannel:Pause(name: string)
 	local sound = self:RequireSound(name)
 	sound:Pause()
 end
 
-function SoundChannel:Resume(name: string)
+function BaseChannel:Resume(name: string)
 	local sound = self:RequireSound(name)
 	sound:Resume()
 end
 
-return SoundChannel
+return BaseChannel

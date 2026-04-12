@@ -3,6 +3,7 @@ local BaseSoundChannel = require(script.Parent.BaseSoundChannel)
 
 local SFXChannel = {}
 SFXChannel.__index = SFXChannel
+setmetatable(SFXChannel, { __index = BaseSoundChannel })
 
 export type PlayOptions = {
 	parent: Instance?,
@@ -13,15 +14,15 @@ export type PlayOptions = {
 	rolloffMinDistance: number?,
 }
 
-export type SFXChannel = typeof(setmetatable(
-	{} :: {
-		group: SoundGroup,
-		sounds: { [string]: Sound },
-		volume: number,
-		activeSounds: { Sound },
-	},
-	SFXChannel
-))
+type BaseChannel = BaseSoundChannel.BaseChannel
+export type SFXChannel =
+	typeof(setmetatable(
+		{} :: {
+			activeSounds: { Sound },
+		},
+		SFXChannel
+	))
+	& BaseChannel
 
 function SFXChannel.new(): SFXChannel
 	local self = BaseSoundChannel.new()
@@ -115,12 +116,14 @@ function SFXChannel:AttachToPart(name: string, part: BasePart, _options: PlayOpt
 end
 
 function SFXChannel:StopAll()
-	for _, sound in ipairs(self.activeSounds) do
+	for i = #self.activeSounds, 1, -1 do
+		local sound = self.activeSounds[i]
 		if sound.Parent then
 			sound:Stop()
 			sound:Destroy()
 		end
 	end
+
 	table.clear(self.activeSounds)
 end
 

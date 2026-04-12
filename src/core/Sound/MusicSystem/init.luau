@@ -1,12 +1,14 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Signal = require(ReplicatedStorage.Packages.Signal)
 local SoundController = require(script.Parent.SoundController)
 
-local SongSystem = {}
-SongSystem.__index = SongSystem
+local MusicSystem = {}
+MusicSystem.__index = MusicSystem
 
 export type RepeatMode = "None" | "All" | "One"
 
-function SongSystem.new(soundController)
-	local self = setmetatable({}, SongSystem)
+function MusicSystem.new(soundController: any?)
+	local self = setmetatable({}, MusicSystem)
 
 	self.sound = soundController or SoundController
 	self.playlists = {}
@@ -23,33 +25,60 @@ function SongSystem.new(soundController)
 	self.repeatMode = "All"
 	self.playToken = 0
 
+	-- self.SongPlayed = Signal.new()
+	-- self.SongStopped = Signal.new()
+	-- self.SongEnded = Signal.new()
+	-- self.SongPaused = Signal.new()
+	-- self.SongContinued = Signal.new()
+
 	return self
 end
 
-function SongSystem:_disconnectEndedConnection()
+function MusicSystem:_disconnectEndedConnection()
 	if self.currentEndedConnection then
 		self.currentEndedConnection:Disconnect()
 		self.currentEndedConnection = nil
 	end
 end
 
-function SongSystem:AddPlaylist(id: string, tracks: { string })
+function MusicSystem:AddPlaylist(id: string, tracks: { string })
 	self.playlists[id] = table.clone(tracks)
 end
 
-function SongSystem:SetStateMap(map: { [string]: string })
-	self.stateMap = map
+function MusicSystem:RemovePlaylist(id: string)
+	if self.currentPlaylistId == id then
+		self:Stop()
+	end
+	self.playlists[id] = nil
 end
 
-function SongSystem:SetShuffle(enabled: boolean)
+function MusicSystem:GetPlaylist(id: string): { string }?
+	return self.playlists[id]
+end
+
+function MusicSystem:SetShuffle(enabled: boolean)
 	self.shuffle = enabled
 end
 
-function SongSystem:SetRepeatMode(mode: RepeatMode)
+function MusicSystem:ToggleShuffle()
+	self:SetShuffle(not self.shuffle)
+end
+
+function MusicSystem:SetRepeatMode(mode: RepeatMode)
 	self.repeatMode = mode
 end
 
-function SongSystem:SetState(state: string)
+function MusicSystem:ToggleRepeatMode()
+	if self.repeatMode == "None" then
+		self:SetRepeatMode("All")
+	elseif self.repeatMode == "All" then
+		self:SetRepeatMode("One")
+	else
+		self:SetRepeatMode("None")
+	end
+end
+
+function MusicSystem:SetState(state: string)
 	self.currentState = state
 
 	local playlistId = self.stateMap[state]
@@ -58,7 +87,7 @@ function SongSystem:SetState(state: string)
 	end
 end
 
-function SongSystem:PlayPlaylist(id: string, startIndex: number?)
+function MusicSystem:PlayPlaylist(id: string, startIndex: number?)
 	local playlist = self.playlists[id]
 	if not playlist or #playlist == 0 then
 		warn(`Playlist {id} not found or empty`)
@@ -71,7 +100,7 @@ function SongSystem:PlayPlaylist(id: string, startIndex: number?)
 	self:PlayCurrent()
 end
 
-function SongSystem:PlayTrack(trackName: string)
+function MusicSystem:PlayTrack(trackName: string)
 	self:_disconnectEndedConnection()
 
 	self.currentPlaylistId = nil
@@ -95,7 +124,7 @@ function SongSystem:PlayTrack(trackName: string)
 	end
 end
 
-function SongSystem:_getPlaylist()
+function MusicSystem:_getPlaylist()
 	if not self.currentPlaylistId then
 		return nil
 	end
@@ -103,7 +132,7 @@ function SongSystem:_getPlaylist()
 	return self.playlists[self.currentPlaylistId]
 end
 
-function SongSystem:_pickNextIndex(playlist: { string }): number?
+function MusicSystem:_pickNextIndex(playlist: { string }): number?
 	if #playlist == 0 then
 		return nil
 	end
@@ -131,7 +160,7 @@ function SongSystem:_pickNextIndex(playlist: { string }): number?
 	return nextIndex
 end
 
-function SongSystem:PlayCurrent()
+function MusicSystem:PlayCurrent()
 	local playlist = self:_getPlaylist()
 	if not playlist then
 		return
@@ -168,7 +197,7 @@ function SongSystem:PlayCurrent()
 	end
 end
 
-function SongSystem:Next()
+function MusicSystem:Next()
 	local playlist = self:_getPlaylist()
 	if not playlist then
 		return
@@ -186,7 +215,7 @@ function SongSystem:Next()
 	self:PlayCurrent()
 end
 
-function SongSystem:Previous()
+function MusicSystem:Previous()
 	local playlist = self:_getPlaylist()
 	if not playlist then
 		return
@@ -208,19 +237,19 @@ function SongSystem:Previous()
 	self:PlayCurrent()
 end
 
-function SongSystem:Pause()
+function MusicSystem:Pause()
 	if self.currentSound then
 		self.currentSound:Pause()
 	end
 end
 
-function SongSystem:Resume()
+function MusicSystem:Resume()
 	if self.currentSound then
 		self.currentSound:Resume()
 	end
 end
 
-function SongSystem:Stop()
+function MusicSystem:Stop()
 	self.playToken += 1
 	self:_disconnectEndedConnection()
 
@@ -231,4 +260,18 @@ function SongSystem:Stop()
 	self.currentIndex = 0
 end
 
-return SongSystem.new()
+function MusicSystem:TogglePause()
+	if self.currentSound then
+		if self.currentSound.IsPlaying then
+			self:Pause()
+		else
+			self:Resume()
+		end
+	end
+end
+
+function MusicSystem:IsPlaying(): boolean
+	return self.currentSound and self.currentSound.IsPlaying or false
+end
+
+return MusicSystem.new()

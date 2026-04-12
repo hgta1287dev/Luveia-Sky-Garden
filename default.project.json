@@ -126,8 +126,8 @@
           },
           "Sound": {
             "$className": "Folder",
-            "SongSystem": {
-              "$path": "src/core/Sound/SongSystem"
+            "MusicSystem": {
+              "$path": "src/core/Sound/MusicSystem"
             },
             "SoundController": {
               "$path": "src/core/Sound/SoundController"
