@@ -5,6 +5,8 @@ local LoggerManager = require(ReplicatedStorage.Shared.Core.LoggerManager)
 
 local Logger = LoggerManager:CreateLogger(script.Name, "System")
 
+local TEST = false
+
 --  * TESTING *
 local TEST_CONTROLLERS = {
 	"CloudLayerService",
@@ -74,7 +76,7 @@ end
 function ServiceLoader:Init()
 	Logger:Debug("System", "Initialization Started!")
 
-	if next(TEST_CONTROLLERS) or next(TEST_SERVICES) then
+	if RunService:IsStudio() and TEST and (next(TEST_CONTROLLERS) or next(TEST_SERVICES)) then
 		if RunService:IsServer() then
 			for _, name in ipairs(TEST_SERVICES) do
 				LoadService(name)
