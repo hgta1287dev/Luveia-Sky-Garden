@@ -1,5 +1,7 @@
+local ContentProvider = game:GetService("ContentProvider")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Signal = require(ReplicatedStorage.Packages.Signal)
+local TweenUtils = require(ReplicatedStorage.Shared.Utils.TweenUtils)
 local SoundController = require(script.Parent.SoundController)
 
 local MusicSystem = {}
@@ -7,12 +9,25 @@ MusicSystem.__index = MusicSystem
 
 export type RepeatMode = "None" | "All" | "One"
 
+local function onSongStarted(self)
+	self.SongStarted:Fire(self.currentTrack)
+end
+
+local function onSongEnded(self, token)
+	if self.playToken ~= token then
+		return
+	end
+	self.SongEnded:Fire(self.currentTrack)
+	self:Next()
+end
+
 function MusicSystem.new(soundController: any?)
 	local self = setmetatable({}, MusicSystem)
 
 	self.sound = soundController or SoundController
 	self.playlists = {}
 	self.stateMap = {}
+	self.queue = {}
 
 	self.currentPlaylistId = nil
 	self.currentIndex = 0
@@ -25,13 +40,41 @@ function MusicSystem.new(soundController: any?)
 	self.repeatMode = "All"
 	self.playToken = 0
 
-	-- self.SongPlayed = Signal.new()
-	-- self.SongStopped = Signal.new()
-	-- self.SongEnded = Signal.new()
-	-- self.SongPaused = Signal.new()
-	-- self.SongContinued = Signal.new()
+	self.SongStarted = Signal.new()
+	self.SongEnded = Signal.new()
+	self.SongPaused = Signal.new()
+	self.SongResumed = Signal.new()
 
 	return self
+end
+
+function MusicSystem:Queue(track)
+	table.insert(self.queue, track)
+end
+
+function MusicSystem:GetCurrentTrack()
+	return self.currentTrack
+end
+
+function MusicSystem:SetStatePlaylist(state: string, playlistId: string)
+	self.stateMap[state] = playlistId
+end
+
+function MusicSystem:PreloadPlaylist(id: string)
+	local playlist = self.playlists[id]
+	if not playlist then
+		return
+	end
+
+	local preloadSounds = {}
+	for _, track in ipairs(playlist) do
+		local sound = self.sound.channels.Music:RequireSound(track) :: Sound
+		if not sound.IsLoaded then
+			table.insert(preloadSounds, sound)
+		end
+	end
+
+	ContentProvider:PreloadAsync(preloadSounds)
 end
 
 function MusicSystem:_disconnectEndedConnection()
@@ -116,12 +159,24 @@ function MusicSystem:PlayTrack(trackName: string)
 
 	if sound and not sound.Looped then
 		self.currentEndedConnection = sound.Ended:Connect(function()
-			if self.playToken ~= token then
-				return
-			end
-			self:Next()
+			onSongEnded(self, token)
 		end)
 	end
+end
+
+function MusicSystem:IsPlaying(): boolean
+	return self.currentSound and self.currentSound.IsPlaying or false
+end
+
+function MusicSystem:Stop(duration: number?, info: TweenUtils.TweenInfoOption?)
+	self.playToken += 1
+	self:_disconnectEndedConnection()
+
+	self.sound:CrossfadeMusic(self.currentTrack, nil, duration, info)
+	self.currentSound = nil
+	self.currentTrack = nil
+	self.currentPlaylistId = nil
+	self.currentIndex = 0
 end
 
 function MusicSystem:_getPlaylist()
@@ -189,25 +244,27 @@ function MusicSystem:PlayCurrent()
 
 	if sound and not sound.Looped then
 		self.currentEndedConnection = sound.Ended:Connect(function()
-			if self.playToken ~= token then
-				return
-			end
-			self:Next()
+			onSongEnded(self, token)
 		end)
 	end
 end
 
 function MusicSystem:Next()
+	-- * Queue has highest priority, if there are any tracks in the queue, play them first
+	if #self.queue > 0 then
+		local track = table.remove(self.queue, 1)
+		self:PlayTrack(track)
+		return
+	end
+
 	local playlist = self:_getPlaylist()
 	if not playlist then
 		return
 	end
 
 	local nextIndex = self:_pickNextIndex(playlist)
-	if not nextIndex then
-		if self.repeatMode == "One" and self.currentTrack then
-			self:PlayCurrent()
-		end
+	if self.repeatMode == "One" then
+		self:PlayCurrent()
 		return
 	end
 
@@ -240,24 +297,19 @@ end
 function MusicSystem:Pause()
 	if self.currentSound then
 		self.currentSound:Pause()
+		self.SongPaused:Fire(self.currentTrack)
 	end
+end
+
+function MusicSystem:IsPaused()
+	return self.currentSound and not self.currentSound.IsPlaying
 end
 
 function MusicSystem:Resume()
 	if self.currentSound then
 		self.currentSound:Resume()
+		self.SongResumed:Fire(self.currentTrack)
 	end
-end
-
-function MusicSystem:Stop()
-	self.playToken += 1
-	self:_disconnectEndedConnection()
-
-	self.sound:StopMusic()
-	self.currentSound = nil
-	self.currentTrack = nil
-	self.currentPlaylistId = nil
-	self.currentIndex = 0
 end
 
 function MusicSystem:TogglePause()
@@ -268,10 +320,6 @@ function MusicSystem:TogglePause()
 			self:Resume()
 		end
 	end
-end
-
-function MusicSystem:IsPlaying(): boolean
-	return self.currentSound and self.currentSound.IsPlaying or false
 end
 
 return MusicSystem.new()

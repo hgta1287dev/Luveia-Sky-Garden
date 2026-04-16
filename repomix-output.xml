@@ -32,7 +32,7 @@ The content is organized as follows:
 <notes>
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Only files matching these patterns are included: src/core/Sound
+- Only files matching these patterns are included: src/core/Sound/MusicSystem/init.luau
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
@@ -42,16 +42,13 @@ The content is organized as follows:
 
 <directory_structure>
 src/core/Sound/MusicSystem/init.luau
-src/core/Sound/SoundController/Channels/BaseSoundChannel.luau
-src/core/Sound/SoundController/Channels/MusicChannel.luau
-src/core/Sound/SoundController/Channels/SFXChannel.luau
-src/core/Sound/SoundController/init.luau
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
 
 <file path="src/core/Sound/MusicSystem/init.luau">
+local ContentProvider = game:GetService("ContentProvider")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Signal = require(ReplicatedStorage.Packages.Signal)
 local SoundController = require(script.Parent.SoundController)
@@ -61,12 +58,25 @@ MusicSystem.__index = MusicSystem
 
 export type RepeatMode = "None" | "All" | "One"
 
+local function onSongStarted(self)
+	self.SongStarted:Fire(self.currentTrack)
+end
+
+local function onSongEnded(self, token)
+	if self.playToken ~= token then
+		return
+	end
+	self.SongEnded:Fire(self.currentTrack)
+	self:Next()
+end
+
 function MusicSystem.new(soundController: any?)
 	local self = setmetatable({}, MusicSystem)
 
 	self.sound = soundController or SoundController
 	self.playlists = {}
 	self.stateMap = {}
+	self.queue = {}
 
 	self.currentPlaylistId = nil
 	self.currentIndex = 0
@@ -79,13 +89,41 @@ function MusicSystem.new(soundController: any?)
 	self.repeatMode = "All"
 	self.playToken = 0
 
-	-- self.SongPlayed = Signal.new()
-	-- self.SongStopped = Signal.new()
-	-- self.SongEnded = Signal.new()
-	-- self.SongPaused = Signal.new()
-	-- self.SongContinued = Signal.new()
+	self.SongStarted = Signal.new()
+	self.SongEnded = Signal.new()
+	self.SongPaused = Signal.new()
+	self.SongResumed = Signal.new()
 
 	return self
+end
+
+function MusicSystem:Queue(track)
+	table.insert(self.queue, track)
+end
+
+function MusicSystem:GetCurrentTrack()
+	return self.currentTrack
+end
+
+function MusicSystem:SetStatePlaylist(state: string, playlistId: string)
+	self.stateMap[state] = playlistId
+end
+
+function MusicSystem:PreloadPlaylist(id: string)
+	local playlist = self.playlists[id]
+	if not playlist then
+		return
+	end
+
+	local preloadSounds = {}
+	for _, track in ipairs(playlist) do
+		local sound = self.sound.channels.Music:RequireSound(track) :: Sound
+		if not sound.IsLoaded then
+			table.insert(preloadSounds, sound)
+		end
+	end
+
+	ContentProvider:PreloadAsync(preloadSounds)
 end
 
 function MusicSystem:_disconnectEndedConnection()
@@ -170,12 +208,24 @@ function MusicSystem:PlayTrack(trackName: string)
 
 	if sound and not sound.Looped then
 		self.currentEndedConnection = sound.Ended:Connect(function()
-			if self.playToken ~= token then
-				return
-			end
-			self:Next()
+			onSongEnded(self, token)
 		end)
 	end
+end
+
+function MusicSystem:IsPlaying(): boolean
+	return self.currentSound and self.currentSound.IsPlaying or false
+end
+
+function MusicSystem:Stop()
+	self.playToken += 1
+	self:_disconnectEndedConnection()
+
+	self.sound:CrossfadeMusic(self.currentTrack, nil, 1)
+	self.currentSound = nil
+	self.currentTrack = nil
+	self.currentPlaylistId = nil
+	self.currentIndex = 0
 end
 
 function MusicSystem:_getPlaylist()
@@ -243,10 +293,7 @@ function MusicSystem:PlayCurrent()
 
 	if sound and not sound.Looped then
 		self.currentEndedConnection = sound.Ended:Connect(function()
-			if self.playToken ~= token then
-				return
-			end
-			self:Next()
+			onSongEnded(self, token)
 		end)
 	end
 end
@@ -294,24 +341,19 @@ end
 function MusicSystem:Pause()
 	if self.currentSound then
 		self.currentSound:Pause()
+		self.SongPaused:Fire(self.currentTrack)
 	end
+end
+
+function MusicSystem:IsPaused()
+	return self.currentSound and not self.currentSound.IsPlaying
 end
 
 function MusicSystem:Resume()
 	if self.currentSound then
 		self.currentSound:Resume()
+		self.SongResumed:Fire(self.currentTrack)
 	end
-end
-
-function MusicSystem:Stop()
-	self.playToken += 1
-	self:_disconnectEndedConnection()
-
-	self.sound:StopMusic()
-	self.currentSound = nil
-	self.currentTrack = nil
-	self.currentPlaylistId = nil
-	self.currentIndex = 0
 end
 
 function MusicSystem:TogglePause()
@@ -324,528 +366,7 @@ function MusicSystem:TogglePause()
 	end
 end
 
-function MusicSystem:IsPlaying(): boolean
-	return self.currentSound and self.currentSound.IsPlaying or false
-end
-
 return MusicSystem.new()
-</file>
-
-<file path="src/core/Sound/SoundController/Channels/BaseSoundChannel.luau">
-local ContentProvider = game:GetService("ContentProvider")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local SoundService = game:GetService("SoundService")
-local TweenService = game:GetService("TweenService")
-
-local TweenUtils = require(ReplicatedStorage.Shared.Utils.TweenUtils)
-
-local BaseChannel = {}
-BaseChannel.__index = BaseChannel
-
-type TweenInfoOption = TweenUtils.TweenInfoOption
-
-export type BaseChannel = typeof(setmetatable(
-	{} :: {
-		group: SoundGroup,
-		sounds: { [string]: Sound },
-		volume: number,
-	},
-	BaseChannel
-))
-
-function BaseChannel.new(): BaseChannel
-	local self = setmetatable({
-		group = Instance.new("SoundGroup"),
-		sounds = {},
-		volume = 1,
-	}, BaseChannel) :: BaseChannel
-
-	self:Init()
-	return self
-end
-
-function BaseChannel:Init()
-	self.group.Name = "BaseChannelGroup"
-	self.group.Parent = SoundService
-	self.group.Volume = 1
-end
-
-function BaseChannel:GetBaseVolume(name: string): number
-	local sound = self:RequireSound(name)
-	local att = sound:GetAttribute("BaseVolume")
-	if typeof(att) == "number" then
-		return att
-	else
-		sound:SetAttribute("BaseVolume", sound.Volume)
-		return sound.Volume
-	end
-end
-
-function BaseChannel:FindSound(name: string): Sound?
-	return self.sounds[name]
-end
-
-function BaseChannel:GetSound(name: string): Sound?
-	local sound = self:FindSound(name)
-	if not sound then
-		warn(`Sound {name} not found in channel`)
-	end
-	return sound
-end
-
-function BaseChannel:RequireSound(name: string): Sound
-	local sound = self:FindSound(name)
-	if not sound then
-		error(`Sound {name} not found in channel`)
-	end
-	return sound
-end
-
-function BaseChannel:AddSound(name: string, sound: Sound)
-	if self.sounds[name] then
-		warn(`Sound {name} already exists in channel, overwriting`)
-	end
-
-	self.sounds[name] = sound
-	sound.Parent = self.group
-	sound.SoundGroup = self.group
-	sound:SetAttribute("BaseVolume", sound.Volume)
-
-	ContentProvider:PreloadAsync({ sound })
-end
-
-function BaseChannel:AddSounds(sounds: { [string]: Sound })
-	for name, sound in pairs(sounds) do
-		self:AddSound(name, sound)
-	end
-end
-
-function BaseChannel:AddSoundFromContainer(parent: Instance, defineFilter: ((Sound) -> string?)?)
-	for _, instance in ipairs(parent:GetDescendants()) do
-		if instance:IsA("Sound") then
-			local sound = instance :: Sound
-			if defineFilter then
-				local newName = defineFilter(sound)
-				if newName then
-					self:AddSound(newName, sound)
-				end
-			else
-				self:AddSound(sound.Name, sound)
-			end
-		end
-	end
-end
-
-function BaseChannel:SetSoundVolume(name: string, volume: number, info: TweenInfoOption?): Tween
-	local sound = self:RequireSound(name)
-	local tweenInfo = TweenUtils.createInfo(info)
-	local tween = TweenService:Create(sound, tweenInfo, { Volume = volume })
-	tween:Play()
-	return tween
-end
-
-function BaseChannel:SetChannelVolume(volume: number, info: TweenInfoOption?): Tween
-	self.volume = volume
-	local tweenInfo = TweenUtils.createInfo(info)
-	local tween = TweenService:Create(self.group, tweenInfo, { Volume = volume })
-	tween:Play()
-	return tween
-end
-
-function BaseChannel:SetOutputVolume(volume: number, info: TweenInfoOption?): Tween
-	local tweenInfo = TweenUtils.createInfo(info)
-	local tween = TweenService:Create(self.group, tweenInfo, { Volume = volume })
-	tween:Play()
-	return tween
-end
-
-function BaseChannel:Play(name: string): Sound
-	local sound = self:RequireSound(name)
-	sound:Play()
-	return sound
-end
-
-function BaseChannel:Stop(name: string)
-	local sound = self:RequireSound(name)
-	sound:Stop()
-end
-
-function BaseChannel:StopAll()
-	for _, sound in pairs(self.sounds) do
-		sound:Stop()
-	end
-end
-
-function BaseChannel:Pause(name: string)
-	local sound = self:RequireSound(name)
-	sound:Pause()
-end
-
-function BaseChannel:Resume(name: string)
-	local sound = self:RequireSound(name)
-	sound:Resume()
-end
-
-return BaseChannel
-</file>
-
-<file path="src/core/Sound/SoundController/Channels/MusicChannel.luau">
-local TweenService = game:GetService("TweenService")
-local BaseSoundChannel = require(script.Parent.BaseSoundChannel)
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenUtils = require(ReplicatedStorage.Shared.Utils.TweenUtils)
-
-local MusicChannel = {}
-MusicChannel.__index = MusicChannel
-setmetatable(MusicChannel, { __index = BaseSoundChannel })
-
-type BaseChannel = BaseSoundChannel.BaseChannel
-export type MusicChannel =
-	typeof(setmetatable(
-		{} :: {
-			currentName: string?,
-			currentSound: Sound?,
-		},
-		MusicChannel
-	))
-	& BaseChannel
-
-type TweenInfoOption = TweenUtils.TweenInfoOption
-
-function MusicChannel.new(): MusicChannel
-	local self = BaseSoundChannel.new()
-	setmetatable(self, MusicChannel)
-
-	self.currentName = nil
-	self.currentSound = nil
-	return self
-end
-
-function MusicChannel:GetCurrentName(): string?
-	return self.currentName
-end
-
-function MusicChannel:GetCurrentSound(): Sound?
-	return self.currentSound
-end
-
-function MusicChannel:Play(name: string): Sound
-	local sound = self:RequireSound(name)
-
-	if self.currentSound and self.currentSound ~= sound then
-		self.currentSound:Stop()
-	end
-
-	self.currentName = name
-	self.currentSound = sound
-	sound:Play()
-	return sound
-end
-
-function MusicChannel:StopCurrent()
-	if self.currentSound then
-		self.currentSound:Stop()
-	end
-
-	self.currentName = nil
-	self.currentSound = nil
-end
-
-function MusicChannel:Crossfade(fromName: string?, toName: string, duration: number?, info: TweenInfoOption?): Sound
-	local toSound = self:RequireSound(toName)
-	local fromSound = fromName and self:GetSound(fromName) or self.currentSound
-
-	-- * Helpers
-	local function fade(sound: Sound, isFrom: boolean): Tween
-		local startVolume = if isFrom then sound.Volume else 0
-		local targetVolume = if isFrom then 0 else self:GetBaseVolume(toName) -- auto equal to base volume if not set
-		local tweenInfo = TweenUtils.createInfo(info or {
-			Time = duration or 1,
-		})
-
-		sound.Volume = startVolume
-		local tween = TweenService:Create(sound, tweenInfo, { Volume = targetVolume })
-		tween:Play()
-
-		if isFrom then
-			self.fromSoundTween = tween
-		else
-			self.toSoundTween = tween
-		end
-
-		task.delay(tweenInfo.Time, function()
-			if isFrom and self.fromSoundTween == tween then
-				self.fromSoundTween = nil
-				if sound then
-					sound:Stop()
-					sound.Volume = self:GetBaseVolume(fromName) --! reset volume for next time
-				end
-			elseif not isFrom and self.toSoundTween == tween then
-				self.toSoundTween = nil -- current playing does not need to reset volume
-			end
-		end)
-
-		return tween
-	end
-
-	-- If same sound, just continue it without crossfade
-	if fromSound == toSound then
-		self:CancelCrossfade()
-
-		if not toSound.IsPlaying then
-			fade(toSound, false)
-		end
-
-		self.currentName = toName
-		self.currentSound = toSound
-
-		return toSound
-	end
-
-	if fromSound and fromSound.IsPlaying then
-		fade(fromSound, true)
-	end
-	fade(toSound, false)
-
-	return toSound
-end
-
--- ! Only cancels the crossfade tweens, does not stop any sounds
-function MusicChannel:CancelCrossfade()
-	if self.toSoundTween then
-		self.toSoundTween:Cancel()
-		self.toSoundTween = nil
-	end
-
-	if self.fromSoundTween then
-		self.fromSoundTween:Cancel()
-		self.fromSoundTween = nil
-	end
-end
-
-return MusicChannel
-</file>
-
-<file path="src/core/Sound/SoundController/Channels/SFXChannel.luau">
-local SoundService = game:GetService("SoundService")
-local BaseSoundChannel = require(script.Parent.BaseSoundChannel)
-
-local SFXChannel = {}
-SFXChannel.__index = SFXChannel
-setmetatable(SFXChannel, { __index = BaseSoundChannel })
-
-export type PlayOptions = {
-	parent: Instance?,
-	volume: number?,
-	playbackSpeed: number?,
-	loop: boolean?,
-	rolloffMaxDistance: number?,
-	rolloffMinDistance: number?,
-}
-
-type BaseChannel = BaseSoundChannel.BaseChannel
-export type SFXChannel =
-	typeof(setmetatable(
-		{} :: {
-			activeSounds: { Sound },
-		},
-		SFXChannel
-	))
-	& BaseChannel
-
-function SFXChannel.new(): SFXChannel
-	local self = BaseSoundChannel.new()
-	setmetatable(self, SFXChannel)
-	self.activeSounds = {}
-	return self
-end
-
-function SFXChannel:_track(sound: Sound)
-	table.insert(self.activeSounds, sound)
-
-	sound.Ended:Connect(function()
-		for i, item in ipairs(self.activeSounds) do
-			if item == sound then
-				table.remove(self.activeSounds, i)
-				break
-			end
-		end
-	end)
-end
-
-function SFXChannel:Play(name: string, _options: PlayOptions?): Sound
-	local options = _options or {}
-
-	local template = self:RequireSound(name)
-	local sound = template:Clone()
-
-	sound.SoundGroup = self.group
-	sound.Parent = options.parent or self.group
-
-	if options.volume ~= nil then
-		sound.Volume = options.volume
-	end
-	if options.playbackSpeed ~= nil then
-		sound.PlaybackSpeed = options.playbackSpeed
-	end
-	if options.loop ~= nil then
-		sound.Looped = options.loop
-	end
-	if options.rolloffMaxDistance ~= nil then
-		sound.RollOffMaxDistance = options.rolloffMaxDistance
-	end
-	if options.rolloffMinDistance ~= nil then
-		sound.RollOffMinDistance = options.rolloffMinDistance
-	end
-
-	sound:Play()
-	self:_track(sound)
-
-	if not sound.Looped then
-		sound.Ended:Connect(function()
-			if sound.Parent then
-				sound:Destroy()
-			end
-		end)
-	end
-
-	return sound
-end
-
-function SFXChannel:PlayAtPosition(name: string, position: Vector3, _options: PlayOptions?): Sound
-	local options = _options or {}
-
-	local holder = Instance.new("Part")
-	holder.Name = "SFXEmitter"
-	holder.Anchored = true
-	holder.CanCollide = false
-	holder.CanTouch = false
-	holder.CanQuery = false
-	holder.Transparency = 1
-	holder.Size = Vector3.new(0.2, 0.2, 0.2)
-	holder.CFrame = CFrame.new(position)
-	holder.Parent = SoundService
-
-	options.parent = holder
-	local sound = self:Play(name, options)
-
-	sound.Ended:Connect(function()
-		if holder.Parent then
-			holder:Destroy()
-		end
-	end)
-
-	return sound
-end
-
-function SFXChannel:AttachToPart(name: string, part: BasePart, _options: PlayOptions?): Sound
-	local options = _options or {}
-	options.parent = part
-	return self:Play(name, options)
-end
-
-function SFXChannel:StopAll()
-	for i = #self.activeSounds, 1, -1 do
-		local sound = self.activeSounds[i]
-		if sound.Parent then
-			sound:Stop()
-			sound:Destroy()
-		end
-	end
-
-	table.clear(self.activeSounds)
-end
-
-return SFXChannel
-</file>
-
-<file path="src/core/Sound/SoundController/init.luau">
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenUtils = require(ReplicatedStorage.Shared.Utils.TweenUtils)
-
-local MusicChannel = require(script.Channels.MusicChannel)
-local SFXChannel = require(script.Channels.SFXChannel)
-
-local SoundController = {}
-SoundController.__index = SoundController
-
-type TweenInfoOption = TweenUtils.TweenInfoOption
-export type ChannelName = "Music" | "SFX"
-
-export type SoundController = typeof(setmetatable(
-	{} :: {
-		masterVolume: number,
-		channels: {
-			Music: MusicChannel.MusicChannel,
-			SFX: SFXChannel.SFXChannel,
-		},
-	},
-	SoundController
-))
-
-function SoundController.new(): SoundController
-	local self = setmetatable({
-		masterVolume = 1,
-		channels = {
-			Music = MusicChannel.new(),
-			SFX = SFXChannel.new(),
-		},
-	}, SoundController)
-
-	return self
-end
-
-function SoundController:_refreshVolumes(info: TweenInfoOption?)
-	self.channels.Music:SetOutputVolume(self.channels.Music.volume * self.masterVolume, info)
-	self.channels.SFX:SetOutputVolume(self.channels.SFX.volume * self.masterVolume, info)
-end
-
-function SoundController:SetMasterVolume(volume: number, info: TweenInfoOption?)
-	self.masterVolume = volume
-	self:_refreshVolumes(info)
-end
-
-function SoundController:SetVolume(volume: number, info: TweenInfoOption?)
-	self:SetMasterVolume(volume, info)
-end
-
-function SoundController:SetChannelVolume(channelName: ChannelName, volume: number, info: TweenInfoOption?)
-	local channel = self.channels[channelName]
-	channel.volume = volume
-	channel:SetOutputVolume(channel.volume * self.masterVolume, info)
-end
-
-function SoundController:Play(channelName: ChannelName, soundName: string, options)
-	local channel = self.channels[channelName]
-	return channel:Play(soundName, options)
-end
-
-function SoundController:Stop(channelName: ChannelName, soundName: string)
-	local channel = self.channels[channelName]
-	channel:Stop(soundName)
-end
-
-function SoundController:PlayMusic(trackName: string)
-	return self.channels.Music:Play(trackName)
-end
-
-function SoundController:CrossfadeMusic(fromName: string?, toName: string, duration: number?)
-	return self.channels.Music:Crossfade(fromName, toName, duration)
-end
-
-function SoundController:StopMusic(trackName: string?)
-	if trackName then
-		self.channels.Music:Stop(trackName)
-	else
-		self.channels.Music:StopCurrent()
-	end
-end
-
-function SoundController:PlaySFX(soundName: string, options)
-	return self.channels.SFX:Play(soundName, options)
-end
-
-return SoundController.new()
 </file>
 
 </files>
